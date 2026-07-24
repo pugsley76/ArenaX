@@ -1,4 +1,5 @@
 import { ApiResponse, ApiError } from "../types";
+import { AuthApiError } from "./authErrors";
 
 class ApiClient {
   private baseURL: string;
@@ -57,7 +58,11 @@ class ApiClient {
         (json as { error?: { message?: string } })?.error?.message ??
         (json as { message?: string })?.message ??
         `HTTP ${response.status}`;
-      throw new Error(message);
+      const code =
+        (json as { error?: { code?: string } })?.error?.code ??
+        (json as { code?: string })?.code ??
+        'UNKNOWN';
+      throw new AuthApiError(message, code);
     }
     return json as T;
   }
@@ -92,6 +97,17 @@ class ApiClient {
       "/auth/resend-verification-email",
       { method: "POST", body: JSON.stringify({ email }) }
     );
+  }
+
+  async getProfile() {
+    return this.request<{
+      id: string;
+      username: string;
+      email: string | null;
+      is_verified: boolean;
+      created_at: string;
+      elo?: number;
+    }>("/users/me");
   }
 
   // Tournament endpoints

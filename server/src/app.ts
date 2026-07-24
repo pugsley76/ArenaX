@@ -1,15 +1,28 @@
 import cors from 'cors';
-import express, { Express } from 'express';
+import express, { Express, Request, Response } from 'express';
 import helmet from 'helmet';
 import passport from 'passport';
+import Redis from 'ioredis';
 import { configurePassport } from './middleware/auth.middleware';
 import { errorHandler } from './middleware/error.middleware';
 import { requestIdMiddleware } from './middleware/request-id.middleware';
+import { correlationMiddleware } from './middleware/correlation.middleware';
 import { metricsMiddleware } from './middleware/metrics.middleware';
 import routes from './routes/index';
 import { getEnv } from './config/env';
 import { getGraphQLExecutor } from './graphql/server';
+import rateLimit from 'express-rate-limit';
+import { MemoryStore } from 'express-rate-limit';
+import { RedisRateLimitStore } from './middleware/rate-limit-redis.store';
+import { FailoverStore } from './middleware/rate-limit-failover';
+import { createRateLimitHealthCheck, registerRateLimitMetricsProvider, getRateLimitMetrics } from './middleware/rate-limit-monitoring';
+import { initAdaptiveRateLimitRedis } from './middleware/adaptiveRateLimit.middleware';
+import { RateLimitAnalytics } from './services/rate-limit-analytics.service';
+import { isRateLimitRedisConnected, getRateLimitRedisClient } from './middleware/rate-limit.middleware';
+import xss from 'xss-clean';
+import hpp from 'hpp';
 import { setupSwagger } from './openapi/swagger';
+import { logger } from './services/logger.service';
 
 const defaultArenaXOrigins = [
     'https://arenax.gg',
@@ -79,7 +92,49 @@ export const createApp = (): Express => {
         })
     );
     app.use(express.json());
+
+    // OWASP Top 10 Protections
+    app.use(xss()); // Prevent XSS attacks
+    app.use(hpp()); // Prevent HTTP Parameter Pollution
+
+    // Global API rate limiter with Redis-backed store and in-memory failover
+    const globalRateLimitWindowMs = 15 * 60 * 1000;
+    const redis = getRateLimitRedisClient();
+    let apiLimiterStore: any;
+    if (redis) {
+        const redisStore = new RedisRateLimitStore({
+            redis,
+            prefix: 'rl:global:',
+            windowMs: globalRateLimitWindowMs,
+        });
+        const memoryStore = new MemoryStore();
+        apiLimiterStore = new FailoverStore(redisStore, memoryStore, {
+            healthCheckFn: async () => isRateLimitRedisConnected(),
+        });
+    }
+    const apiLimiter = rateLimit({
+        windowMs: globalRateLimitWindowMs,
+        limit: 100,
+        message: 'Too many requests from this IP, please try again after 15 minutes',
+        standardHeaders: 'draft-7',
+        legacyHeaders: false,
+        ...(apiLimiterStore ? { store: apiLimiterStore } : {}),
+    });
+    app.use('/api', apiLimiter);
+
+    // Rate limit health check endpoint
+    app.get('/api/rate-limit/health', async (_req: Request, res: Response) => {
+        const connected = isRateLimitRedisConnected();
+        const metrics = await getRateLimitMetrics();
+        res.json({
+            status: connected ? 'ok' : 'degraded',
+            redis: connected ? 'connected' : 'fallback-to-memory',
+            metrics,
+        });
+    });
+
     app.use(requestIdMiddleware);
+    app.use(correlationMiddleware);
     app.use(passport.initialize());
     app.use(metricsMiddleware);
     app.use('/api', routes);

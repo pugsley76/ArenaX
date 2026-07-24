@@ -88,6 +88,8 @@ const envSchema = z.object({
     // ── Rate Limiting ────────────────────────────────────────────────────────
     RATE_LIMIT_TRUSTED_IPS: z.string().optional(),
     RATE_LIMIT_TRUSTED_ACCOUNTS: z.string().optional(),
+    RATE_LIMIT_REDIS_KEY_PREFIX: z.string().default('rl:'),
+    RATE_LIMIT_ANALYTICS_ENABLED: boolStr.default('true'),
 
     // ── Metrics ──────────────────────────────────────────────────────────────
     METRICS_ENABLED: boolStr.default('true'),
@@ -141,6 +143,18 @@ const envSchema = z.object({
     // ── External Payments ────────────────────────────────────────────────────
     PAYSTACK_SECRET_KEY: z.string().optional(),
     FLUTTERWAVE_SECRET_KEY: z.string().optional(),
+
+    // ── CDN / Cache ──────────────────────────────────────────────────────────
+    CDN_PROVIDER: z.enum(['cloudflare', 'cloudfront', 'fastly']).optional(),
+    CDN_ZONE_ID: z.string().optional(),
+    CDN_API_TOKEN: z.string().optional(),
+    CDN_DISTRIBUTION_ID: z.string().optional(),
+    CDN_DEFAULT_TTL: z.string().default('86400'),
+    CDN_STALE_WHILE_REVALIDATE: z.string().default('86400'),
+    CACHE_WARMING_INTERVAL_MS: z.string().default('300000'),
+
+    // ── API Gateway ──────────────────────────────────────────────────────────
+    API_KEY_RATE_LIMIT: z.string().default('100'),
 
     // ── Webhooks / Notifications ─────────────────────────────────────────────
     ADMIN_WEBHOOK_URL: z.string().url().optional(),
