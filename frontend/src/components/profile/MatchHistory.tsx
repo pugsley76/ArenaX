@@ -3,6 +3,17 @@
 import React, { useState, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { MatchWithPlayers } from "@/types/profile";
+
+// Allow the component to accept either the profile-specific MatchWithPlayers
+// (which has score/date) or the general MatchWithPlayers from @/types/match
+// (which has scorePlayer1/scorePlayer2/createdAt). We use an intersection type
+// so both shapes are accepted.
+type AnyMatchWithPlayers = MatchWithPlayers & {
+  scorePlayer1?: number;
+  scorePlayer2?: number;
+  createdAt?: string;
+  completedAt?: string;
+};
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { VirtualDynamicList, VirtualDynamicListRenderProps } from "@/components/ui/VirtualDynamicList";
